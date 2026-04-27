@@ -13,6 +13,29 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json()
 }
 
+// ── Types ───────────────────────────────────────────────────────────────────
+
+export interface Citation {
+  title: string
+  source_type: string
+  authority: string
+  citation_ref: string
+  section_ref: string
+  source_url: string
+}
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
+
+export interface CorpusQueryResponse {
+  answer: string
+  citations: Citation[]
+  confidence: ConfidenceLevel
+  document_findings: string | null
+  legal_context: string | null
+}
+
+// ── API methods ─────────────────────────────────────────────────────────────
+
 export const api = {
   analyzeDocument: (text: string) =>
     post<{ result: string }>('/api/analyze/document', { text }),
@@ -40,6 +63,12 @@ export const api = {
 
   legalQA: (question: string, documentText: string) =>
     post<{ result: string }>('/api/understand/qa', { question, document_text: documentText }),
+
+  researchQuery: (question: string, documentText?: string) =>
+    post<CorpusQueryResponse>('/api/research/query', {
+      question,
+      document_text: documentText || null,
+    }),
 
   extractFile: (file: File) => {
     const form = new FormData()

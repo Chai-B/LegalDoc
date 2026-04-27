@@ -57,7 +57,7 @@ export default function NDAGeneratorPage() {
     <ToolLayout
       icon={FileSignature}
       name="NDA Generator"
-      description="Generate a complete, professionally worded Non-Disclosure Agreement — mutual or one-way, tailored to your parties and jurisdiction."
+      description="Generate a research-informed Non-Disclosure Agreement tailored to Indian law — mutual or one-way, with your parties and jurisdiction. Review by a qualified lawyer is recommended."
       category="Draft"
       inputPanel={
         <div className="flex flex-col gap-4 h-full">

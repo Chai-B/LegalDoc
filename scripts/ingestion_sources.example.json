@@ -1,0 +1,29 @@
+[
+  {
+    "title": "Indian Contract Act, 1872",
+    "source_type": "statute",
+    "authority": "Parliament of India",
+    "citation": "Act No. 9 of 1872",
+    "source_url": "https://www.indiacode.nic.in/handle/123456789/2187",
+    "published_at": "1872-04-25",
+    "local_path": "corpus/statutes/indian_contract_act_1872.pdf"
+  },
+  {
+    "title": "Information Technology Act, 2000",
+    "source_type": "statute",
+    "authority": "Parliament of India",
+    "citation": "Act No. 21 of 2000",
+    "source_url": "https://www.indiacode.nic.in/handle/123456789/1999",
+    "published_at": "2000-06-09",
+    "local_path": "corpus/statutes/it_act_2000.pdf"
+  },
+  {
+    "title": "RBI Master Direction on KYC",
+    "source_type": "circular",
+    "authority": "Reserve Bank of India",
+    "citation": "RBI/2016-17/45",
+    "source_url": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11566",
+    "published_at": "2016-02-25",
+    "local_path": "corpus/circulars/rbi_kyc_master_direction.pdf"
+  }
+]

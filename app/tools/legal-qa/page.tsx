@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
+import type { Citation, ConfidenceLevel } from '@/lib/api'
 import { toast } from 'sonner'
 
 const SAMPLE_QUESTIONS = [
@@ -16,34 +17,55 @@ const SAMPLE_QUESTIONS = [
   'Who owns the intellectual property?',
   'What are the payment terms?',
   'Is there a non-compete clause?',
+  'What does Indian contract law say about consideration?',
 ]
 
 export default function LegalQAPage() {
   const [documentText, setDocumentText] = useState('')
   const [question, setQuestion] = useState('')
   const [result, setResult] = useState<string | null>(null)
+  const [citations, setCitations] = useState<Citation[]>([])
+  const [confidence, setConfidence] = useState<ConfidenceLevel | undefined>()
   const [loading, setLoading] = useState(false)
 
   const handleFile = (_file: File, nextText: string) => {
     setDocumentText(nextText)
     setResult(null)
+    setCitations([])
+    setConfidence(undefined)
   }
 
   const handleClear = () => {
     setDocumentText('')
     setResult(null)
+    setCitations([])
+    setConfidence(undefined)
   }
 
   const ask = async () => {
-    if (!documentText.trim()) return toast.error('Please upload a document first')
     if (!question.trim()) return toast.error('Please enter a question')
     setLoading(true)
     setResult(null)
+    setCitations([])
+    setConfidence(undefined)
     try {
-      const data = await api.legalQA(question, documentText)
-      setResult(data.result)
-    } catch (e: any) {
-      toast.error(e.message || 'Q&A failed')
+      // Use corpus-backed endpoint
+      const data = await api.researchQuery(question, documentText || undefined)
+      setResult(data.answer)
+      setCitations(data.citations)
+      setConfidence(data.confidence)
+    } catch {
+      // Fallback to legacy endpoint if document is available
+      if (documentText) {
+        try {
+          const data = await api.legalQA(question, documentText)
+          setResult(data.result)
+        } catch (e: any) {
+          toast.error(e.message || 'Q&A failed')
+        }
+      } else {
+        toast.error('Please upload a document or try again')
+      }
     } finally {
       setLoading(false)
     }
@@ -53,19 +75,24 @@ export default function LegalQAPage() {
     <ToolLayout
       icon={MessageSquare}
       name="Legal Q&A"
-      description="Upload a legal document and ask targeted questions. Answers are grounded in retrieved excerpts from the actual text."
+      description="Ask legal questions about Indian law or your uploaded document. Answers are grounded in retrieved legal authorities and document excerpts."
       category="Understand"
       inputPanel={
         <div className="flex flex-col gap-4 h-full">
           <div className="panel p-5 flex flex-col gap-5 flex-1">
             <div>
               <p className="panel-label mb-3">
-                1. Upload Document
+                1. Upload Document (Optional)
               </p>
               <FileUpload onFile={handleFile} onClear={handleClear} />
               {documentText && (
                 <p className="text-xs text-muted mt-2 px-1">
                   {documentText.length.toLocaleString()} characters loaded
+                </p>
+              )}
+              {!documentText && (
+                <p className="text-xs text-muted-dark mt-2 px-1">
+                  No document? You can still ask Indian-law questions using the public corpus.
                 </p>
               )}
             </div>
@@ -78,7 +105,7 @@ export default function LegalQAPage() {
                   setQuestion(e.target.value)
                   setResult(null)
                 }}
-                placeholder="What do you want to know about this document?"
+                placeholder="What do you want to know about Indian law or this document?"
                 className="min-h-[100px] resize-none"
               />
               <div className="flex flex-wrap gap-1.5 pt-1">
@@ -99,11 +126,11 @@ export default function LegalQAPage() {
           </div>
           <Button
             onClick={ask}
-            disabled={!documentText || !question.trim() || loading}
+            disabled={!question.trim() || loading}
             size="lg"
             className="w-full"
           >
-            {loading ? 'Searching document…' : 'Ask Question'}
+            {loading ? 'Searching…' : 'Ask Question'}
           </Button>
         </div>
       }
@@ -111,7 +138,9 @@ export default function LegalQAPage() {
         <ResultPanel
           result={result}
           loading={loading}
-          placeholder="Upload a document and ask a question to get answers grounded in the actual text."
+          placeholder="Ask a question about Indian law or upload a document to get answers grounded in legal authorities."
+          citations={citations}
+          confidence={confidence}
         />
       }
     />

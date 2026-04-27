@@ -4,16 +4,21 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Copy, CheckCheck, Loader2, Scale, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CitationList } from '@/components/tools/citation-list'
+import { ConfidenceBadge } from '@/components/tools/confidence-badge'
 import { cn } from '@/lib/utils'
+import type { Citation, ConfidenceLevel } from '@/lib/api'
 
 interface ResultPanelProps {
   result: string | null
   loading: boolean
   placeholder?: string
   className?: string
+  citations?: Citation[]
+  confidence?: ConfidenceLevel
 }
 
-export function ResultPanel({ result, loading, placeholder, className }: ResultPanelProps) {
+export function ResultPanel({ result, loading, placeholder, className, citations, confidence }: ResultPanelProps) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
@@ -46,6 +51,9 @@ export function ResultPanel({ result, loading, placeholder, className }: ResultP
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-accent" style={{ animation: loading ? 'pulse 1s ease-in-out infinite' : 'none' }} />
           <span className="text-xs font-medium text-muted uppercase tracking-wider">Review Output</span>
+          {confidence && result && (
+            <ConfidenceBadge level={confidence} className="ml-2" />
+          )}
         </div>
         {result && (
           <div className="flex items-center gap-1">
@@ -104,10 +112,14 @@ export function ResultPanel({ result, loading, placeholder, className }: ResultP
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
+              className="space-y-5"
             >
               <pre className="whitespace-pre-wrap font-sans text-sm text-foreground/90 leading-7">
                 {result}
               </pre>
+              {citations && citations.length > 0 && (
+                <CitationList citations={citations} className="pt-3 border-t border-separator" />
+              )}
             </motion.div>
           ) : (
             <motion.div

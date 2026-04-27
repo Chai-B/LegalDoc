@@ -47,7 +47,7 @@ export default function ContractDrafterPage() {
     <ToolLayout
       icon={FilePen}
       name="Contract Drafter"
-      description="Describe your deal in plain English and get a complete, professionally worded contract ready to use."
+      description="Describe your deal in plain English and get a research-informed contract draft based on Indian-law practices. Review by a qualified lawyer is recommended."
       category="Draft"
       inputPanel={
         <div className="flex flex-col gap-4 h-full">
