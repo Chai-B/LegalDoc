@@ -28,3 +28,5 @@ warp_instructions.md
 .idea/
 *.swp
 *.swo
+.next/
+node_modules/

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!--
+    LegalDoc favicon — optimized for 16–32px.
+    Base and chain strokes removed; remaining strokes weighted heavier
+    so the mark holds up at tab size.
+  -->
+
+  <rect x="2" y="2" width="44" height="44" rx="10" fill="#0A0A0A"/>
+
+  <!-- Fulcrum column -->
+  <path d="M24 12 L24 34"
+        stroke="#F5F5F7" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Crossbeam -->
+  <path d="M9 18 L39 18"
+        stroke="#F5F5F7" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Left pan -->
+  <path d="M6 26 Q12 33 18 26"
+        stroke="#7EB8FF" stroke-width="2.75" stroke-linecap="round" fill="none"/>
+
+  <!-- Right pan -->
+  <path d="M30 26 Q36 33 42 26"
+        stroke="#49D6C8" stroke-width="2.75" stroke-linecap="round" fill="none"/>
+
+  <!-- Top cap -->
+  <circle cx="24" cy="11" r="3" fill="#007AFF"/>
+</svg>

@@ -1,8 +1,0 @@
-__pycache__/
-*.pyc
-*.pkl
-*.faiss
-node_modules/
-build/
-.env
-.DS_Store
