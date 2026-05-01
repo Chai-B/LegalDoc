@@ -3,6 +3,13 @@ LegalDoc API v3 — Indian-law RAG-backed FastAPI backend.
 Deployed as a Vercel Python serverless function via Mangum.
 """
 import os
+
+# Load .env in local development (no-op if file absent or python-dotenv not installed)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -185,14 +192,36 @@ Indian-law reference material:
 Focus on Indian law. If something is not present, say "Not found in document".
 Be specific, concise, and useful for legal review. Do not give generic disclaimers.
 
+Use proper markdown formatting:
+- Use ## for main section headings and ### for sub-headings
+- Use **bold** for important terms, party names, and risk labels
+- Use bullet points (- ) for lists
+- Use | tables | for structured data like key terms
+- Label risks clearly as **High Risk**, **Medium Risk**, or **Low Risk**
+
 Return these sections:
-1. Executive Brief — document type, purpose, and business context.
-2. Parties and Roles — named parties, capacity, and responsibilities.
-3. Key Terms Table — obligation, responsible party, deadline/payment/condition, source clause.
-4. Risk Register — high/medium/low risks with quoted trigger language and why it matters.
-5. Missing or Weak Protections — important clauses absent or underdeveloped.
-6. Negotiation Points — concrete changes a lawyer may request.
-7. Follow-up Questions — facts needed from the client before final review.
+
+## 1. Executive Brief
+Document type, purpose, and business context.
+
+## 2. Parties and Roles
+Named parties, capacity, and responsibilities.
+
+## 3. Key Terms Table
+| Obligation | Responsible Party | Deadline / Condition | Source Clause |
+|---|---|---|---|
+
+## 4. Risk Register
+High/medium/low risks with quoted trigger language and why it matters.
+
+## 5. Missing or Weak Protections
+Important clauses absent or underdeveloped.
+
+## 6. Negotiation Points
+Concrete changes a lawyer may request.
+
+## 7. Follow-up Questions
+Facts needed from the client before final review.
 {corpus_section}
 
 Document:
@@ -224,12 +253,38 @@ Also consider compliance with Indian-law standards based on these references:
 First line of your response MUST be exactly: RISK_SCORE: [number between 0-100]
 (0 = very safe, 100 = extremely risky)
 
-Then provide:
-1. Overall Risk Assessment
-2. High-Risk Clauses (quote each one, explain the risk)
-3. Medium-Risk Areas
-4. Missing Standard Protections under Indian law
-5. Recommendations
+Use proper markdown formatting:
+- Use ## for section headings, ### for sub-headings
+- Use **bold** for clause names, key terms, and risk labels
+- Label findings as **High Risk**, **Medium Risk**, or **Low Risk**
+- Use bullet points (- ) and quoted text (> ) for contract excerpts
+
+Structure your response exactly as:
+
+## Risk Score Breakdown
+Explain what drove the score. Show a contribution table like:
+| Risk Factor | Contribution |
+|---|---|
+| [e.g. High-risk clauses] | [e.g. 35%] |
+| [Missing protections] | [e.g. 25%] |
+| [Medium-risk areas] | [e.g. 20%] |
+| [Compliance gaps] | [e.g. 20%] |
+*(all rows must sum to 100%)*
+
+## Overall Risk Assessment
+One-paragraph summary of the contract's risk profile under Indian law.
+
+## High-Risk Clauses
+For each: **Clause Name** — **High Risk** — quote the trigger language, explain why it is dangerous, and what it costs the weaker party.
+
+## Medium-Risk Areas
+Concerns worth negotiating but not immediately dangerous.
+
+## Missing Standard Protections
+Standard Indian-law protections absent from this contract (cite the applicable Act where possible).
+
+## Recommendations
+Prioritized, actionable steps to reduce the risk score. Number them.
 {corpus_section}
 
 Contract:
@@ -272,13 +327,30 @@ Where relevant, note how each clause compares to Indian legal standards:
 
     prompt = f"""You are an expert Indian-law legal analyst. Extract and categorize all significant clauses.
 
-For each clause found, provide:
-- Clause Type (Termination / Indemnity / Payment / Confidentiality / IP / Non-Compete / Jurisdiction / Force Majeure / etc.)
-- Direct Quote from document
-- Plain English Explanation
-- Risk Level: High / Medium / Low
-- Key Concerns (if any)
-- Indian-Law Note (if relevant legal context exists)
+Use proper markdown formatting:
+- Use ## for each clause type heading
+- Use **bold** for clause names, party names, and risk labels
+- Label each clause as **High Risk**, **Medium Risk**, or **Low Risk**
+- Use > blockquotes for direct quotes from the document
+- Use bullet points (- ) for key concerns
+
+For each clause found, structure it as:
+
+## [Clause Type] — **[Risk Level]**
+
+**Quote:** > [direct quote from document]
+
+**Plain English:** What this clause actually means.
+
+**Key Concerns:**
+- [concern 1]
+- [concern 2]
+
+**Indian-Law Note:** [if relevant context exists]
+
+---
+
+Clause types to look for: Termination / Indemnity / Payment / Confidentiality / IP / Non-Compete / Jurisdiction / Force Majeure / Governing Law / Dispute Resolution / Liability Cap / Warranty / Representations / Assignment / Amendment / Entire Agreement
 {corpus_section}
 
 Document:
@@ -415,12 +487,25 @@ async def plain_english(req: TextRequest):
 
     prompt = f"""You are a legal translator who makes Indian legal language accessible to non-lawyers.
 
+Use proper markdown formatting:
+- Use ## for section headings
+- Use **bold** for key terms and important phrases
+- Use bullet points (- ) for lists
+- Label any risks clearly as **High Risk**, **Medium Risk**, or **Low Risk**
+
 Translate the following legal text into plain English:
 
-1. Plain English Summary — what this actually means in everyday language
-2. Key Points — 3-6 bullet points of what matters most
-3. What This Means for You — practical implications under Indian law
-4. Watch Out For — any concerning language or missing protections
+## Plain English Summary
+What this actually means in everyday language.
+
+## Key Points
+- [3-6 bullet points of what matters most]
+
+## What This Means for You
+Practical implications under Indian law.
+
+## Watch Out For
+Any concerning language, hidden risks, or missing protections.
 
 Legal text:
 {text[:5000]}"""
