@@ -31,3 +31,4 @@ warp_instructions.md
 *.swo
 .next/
 node_modules/
+tsconfig.tsbuildinfo
