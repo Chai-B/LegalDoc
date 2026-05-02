@@ -7,7 +7,6 @@ export interface StoredDocument {
 
 export function saveDocument(doc: StoredDocument): void {
   try {
-    // text can be large — only save if under 2MB
     const json = JSON.stringify(doc)
     if (json.length < 2 * 1024 * 1024) {
       localStorage.setItem(KEY, json)
@@ -28,4 +27,10 @@ export function clearDocument(): void {
   try {
     localStorage.removeItem(KEY)
   } catch {}
+}
+
+export function registerUnloadClear(): () => void {
+  const handler = () => clearDocument()
+  window.addEventListener('beforeunload', handler)
+  return () => window.removeEventListener('beforeunload', handler)
 }

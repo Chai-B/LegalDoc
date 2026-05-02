@@ -1,19 +1,50 @@
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '')
 
+export class RateLimitError extends Error {
+  retryAfterSeconds: number
+  retryAfterMinutes: number
+
+  constructor(message: string, retryAfterSeconds: number, retryAfterMinutes: number) {
+    super(message)
+    this.name = 'RateLimitError'
+    this.retryAfterSeconds = retryAfterSeconds
+    this.retryAfterMinutes = retryAfterMinutes
+  }
+}
+
+export class NonIndianLawError extends Error {
+  constructor() {
+    super('non_indian_law_content')
+    this.name = 'NonIndianLawError'
+  }
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(err.detail || 'Request failed')
+    const err = await res.json().catch(() => ({}))
+
+    if (res.status === 429) {
+      const secs: number = err.retry_after_seconds ?? 60
+      const mins: number = err.retry_after_minutes ?? Math.max(1, Math.ceil(secs / 60))
+      const msg: string = err.message || `All API keys are rate-limited. Please try again in ${mins} minute${mins !== 1 ? 's' : ''}.`
+      throw new RateLimitError(msg, secs, mins)
+    }
+
+    if (res.status === 422 && err.detail === 'non_indian_law_content') {
+      throw new NonIndianLawError()
+    }
+
+    throw new Error(err.detail || err.message || 'Request failed')
   }
+
   return res.json()
 }
-
-// ── Types ───────────────────────────────────────────────────────────────────
 
 export interface Citation {
   title: string
@@ -33,8 +64,6 @@ export interface CorpusQueryResponse {
   document_findings: string | null
   legal_context: string | null
 }
-
-// ── API methods ─────────────────────────────────────────────────────────────
 
 export const api = {
   analyzeDocument: (text: string) =>

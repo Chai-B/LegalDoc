@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
+import { handleApiError } from '@/lib/handle-error'
 
 const EXAMPLES = [
-  'The indemnifying party shall defend, indemnify, and hold harmless the indemnified party from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys\' fees) arising out of or relating to any breach of this Agreement.',
-  'Notwithstanding any other provision of this Agreement, neither party shall be liable to the other for any indirect, incidental, special, consequential, or punitive damages.',
+  'The indemnifying party shall defend, indemnify, and hold harmless the indemnified party from and against any and all claims, damages, losses, costs, and expenses (including reasonable advocates\' fees) arising out of or relating to any breach of this Agreement, including any violation of applicable Indian law.',
+  'Notwithstanding any other provision of this Agreement, disputes arising out of or in connection with this Agreement shall be referred to arbitration under the Arbitration and Conciliation Act, 1996, with the seat of arbitration at Mumbai, Maharashtra.',
 ]
 
 export default function PlainEnglishPage() {
@@ -28,7 +29,7 @@ export default function PlainEnglishPage() {
       const data = await api.plainEnglish(text)
       setResult(data.result)
     } catch (e: any) {
-      toast.error(e.message || 'Translation failed')
+      handleApiError(e)
     } finally {
       setLoading(false)
     }

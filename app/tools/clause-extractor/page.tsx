@@ -6,12 +6,13 @@ import { ToolLayout } from '@/components/tools/tool-layout'
 import { FileUpload } from '@/components/tools/file-upload'
 import { ResultPanel } from '@/components/tools/result-panel'
 import { QuickInsights } from '@/components/tools/quick-insights'
-import { SourceViewer } from '@/components/tools/source-viewer'
+import { SourceViewer, SourceViewerRef } from '@/components/tools/source-viewer'
 import { Button } from '@/components/ui/button'
 import { DocumentViewerRef } from '@/components/tools/document-viewer'
 import { api } from '@/lib/api'
-import { saveDocument, loadDocument, clearDocument } from '@/lib/document-store'
+import { saveDocument, loadDocument, clearDocument, registerUnloadClear } from '@/lib/document-store'
 import { toast } from 'sonner'
+import { handleApiError } from '@/lib/handle-error'
 
 export default function ClauseExtractorPage() {
   const [file, setFile] = useState<File | null>(null)
@@ -20,6 +21,7 @@ export default function ClauseExtractorPage() {
   const [result, setResult] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const viewerRef = useRef<DocumentViewerRef>(null)
+  const sourceRef = useRef<SourceViewerRef>(null)
 
   useEffect(() => {
     const saved = loadDocument()
@@ -27,6 +29,7 @@ export default function ClauseExtractorPage() {
       setText(saved.text)
       setFileName(saved.fileName)
     }
+    return registerUnloadClear()
   }, [])
 
   const handleFile = (f: File, nextText: string) => {
@@ -53,7 +56,7 @@ export default function ClauseExtractorPage() {
       const data = await api.extractClauses(text)
       setResult(data.result)
     } catch (e: any) {
-      toast.error(e.message || 'Extraction failed')
+      handleApiError(e)
     } finally {
       setLoading(false)
     }
@@ -71,7 +74,7 @@ export default function ClauseExtractorPage() {
             <p className="panel-label">Upload Document</p>
             <FileUpload onFile={handleFile} onClear={handleClear} />
 
-            {text && <SourceViewer file={file} text={text} fileName={fileName} />}
+            {text && <SourceViewer ref={sourceRef} file={file} text={text} fileName={fileName} />}
 
             {text && (
               <p className="text-[11px] text-muted px-1">
@@ -82,7 +85,7 @@ export default function ClauseExtractorPage() {
             <QuickInsights
               result={result}
               loading={loading && !!text}
-              onScrollTo={t => viewerRef.current?.scrollToText(t)}
+              onScrollTo={t => sourceRef.current?.openAndScrollTo(t)}
             />
           </div>
 

@@ -4,8 +4,6 @@ import { useRef, useCallback, useImperativeHandle, forwardRef, useState } from '
 import { Highlighter, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 export interface Highlight {
   id: string
   text: string
@@ -16,19 +14,16 @@ export interface DocumentViewerRef {
   scrollToText: (text: string) => void
 }
 
-// ── Highlight colors ──────────────────────────────────────────────────────────
-
 export const HIGHLIGHT_COLORS = [
-  { label: 'Yellow', bg: 'rgba(253,224,71,0.4)', dot: '#fde047' },
-  { label: 'Blue',   bg: 'rgba(96,165,250,0.3)',  dot: '#60a5fa' },
-  { label: 'Green',  bg: 'rgba(52,211,153,0.28)', dot: '#34d399' },
-  { label: 'Pink',   bg: 'rgba(249,168,212,0.35)',dot: '#f9a8d4' },
+  { label: 'Yellow', bg: 'rgba(253,224,71,0.55)', dot: '#fde047' },
+  { label: 'Blue',   bg: 'rgba(96,165,250,0.45)',  dot: '#60a5fa' },
+  { label: 'Green',  bg: 'rgba(52,211,153,0.4)',   dot: '#34d399' },
+  { label: 'Pink',   bg: 'rgba(249,168,212,0.5)',  dot: '#f9a8d4' },
 ]
 
-// ── Inline renderer ───────────────────────────────────────────────────────────
-
-// Applies auto-highlights (risk levels) + user highlights + markdown formatting.
-// Two-pass to avoid breaking bold/italic when a user-highlight spans formatting markers.
+function norm(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim()
+}
 
 function applyTextHighlights(
   text: string,
@@ -37,9 +32,26 @@ function applyTextHighlights(
 ): React.ReactNode[] {
   if (!text) return []
 
-  const hlPats = highlights
-    .map(h => h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .filter(Boolean)
+  const nt = norm(text)
+
+  // If this element is fully contained within a multi-element highlight, highlight the whole thing
+  const containerHL = highlights.find(h => {
+    const nh = norm(h.text)
+    return nt.length > 2 && nh.length > nt.length && nh.includes(nt)
+  })
+  if (containerHL) {
+    return [
+      <mark key={key} style={{ background: containerHL.color, borderRadius: '4px', padding: '1px 3px' }}>
+        {text}
+      </mark>
+    ]
+  }
+
+  // Exact / substring match for direct (single-element) highlights
+  const exactHL = highlights.find(h => {
+    const nh = norm(h.text)
+    return nt === nh || nt.includes(nh) || nh.includes(nt)
+  })
 
   const autoPats = [
     'High[\\s\\-]?Risk|HIGH[\\s\\-]?RISK',
@@ -47,14 +59,23 @@ function applyTextHighlights(
     'Low[\\s\\-]?Risk|LOW[\\s\\-]?RISK',
   ]
 
-  const combined = new RegExp(`(${[...hlPats, ...autoPats].join('|')})`, 'gi')
+  const hlPats = exactHL
+    ? [exactHL.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')]
+    : highlights.map(h => h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
+
+  const allPats = [...hlPats, ...autoPats]
+  const combined = new RegExp(`(${allPats.join('|')})`, 'gi')
   const parts = text.split(combined).filter(p => p != null)
 
   return parts.map((part, i) => {
     if (!part) return null
     const k = `${key}-t${i}`
 
-    const matchHL = highlights.find(h => h.text.toLowerCase() === part.toLowerCase())
+    const matchHL = highlights.find(h => {
+      const nh = norm(h.text)
+      const np = norm(part)
+      return np === nh || (np.length > 3 && (nh.includes(np) || np.includes(nh)))
+    })
     if (matchHL) {
       return (
         <mark key={k} style={{ background: matchHL.color, borderRadius: '4px', padding: '1px 3px' }}>
@@ -64,13 +85,13 @@ function applyTextHighlights(
     }
 
     if (/^(High[\s\-]?Risk|HIGH[\s\-]?RISK)$/i.test(part)) {
-      return <mark key={k} style={{ background: 'rgba(239,68,68,0.18)', color: 'rgb(252,165,165)', borderRadius: '4px', padding: '1px 5px', fontWeight: 600 }}>{part}</mark>
+      return <mark key={k} style={{ background: 'rgba(239,68,68,0.2)', color: 'rgb(252,165,165)', borderRadius: '4px', padding: '2px 6px', fontWeight: 600 }}>{part}</mark>
     }
     if (/^(Medium[\s\-]?Risk|MEDIUM[\s\-]?RISK|Moderate[\s\-]?Risk)$/i.test(part)) {
-      return <mark key={k} style={{ background: 'rgba(168,85,247,0.18)', color: 'rgb(216,180,254)', borderRadius: '4px', padding: '1px 5px', fontWeight: 600 }}>{part}</mark>
+      return <mark key={k} style={{ background: 'rgba(168,85,247,0.2)', color: 'rgb(216,180,254)', borderRadius: '4px', padding: '2px 6px', fontWeight: 600 }}>{part}</mark>
     }
     if (/^(Low[\s\-]?Risk|LOW[\s\-]?RISK)$/i.test(part)) {
-      return <mark key={k} style={{ background: 'rgba(52,211,153,0.15)', color: 'rgb(110,231,183)', borderRadius: '4px', padding: '1px 5px', fontWeight: 600 }}>{part}</mark>
+      return <mark key={k} style={{ background: 'rgba(52,211,153,0.18)', color: 'rgb(110,231,183)', borderRadius: '4px', padding: '2px 6px', fontWeight: 600 }}>{part}</mark>
     }
 
     return <span key={k}>{part}</span>
@@ -84,10 +105,8 @@ function renderInline(
 ): React.ReactNode {
   if (!text) return null
 
-  // Pass 1: split on markdown formatting tokens
   const fmtPat = /(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|`[^`\n]+?`)/g
   const fmtParts = text.split(fmtPat).filter(p => p != null)
-
   const nodes: React.ReactNode[] = []
 
   fmtParts.forEach((part, i) => {
@@ -96,8 +115,11 @@ function renderInline(
 
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       const inner = part.slice(2, -2)
-      // Check if a user highlight matches this bold word
-      const matchHL = highlights.find(h => h.text.toLowerCase() === inner.toLowerCase())
+      const matchHL = highlights.find(h => {
+        const nh = norm(h.text)
+        const ni = norm(inner)
+        return ni === nh || (ni.length > 3 && (nh.includes(ni) || ni.includes(nh)))
+      })
       if (matchHL) {
         nodes.push(
           <mark key={k} style={{ background: matchHL.color, borderRadius: '4px', padding: '1px 3px' }}>
@@ -124,7 +146,6 @@ function renderInline(
       return
     }
 
-    // Pass 2: apply auto-highlights and user highlights on plain text
     const hlNodes = applyTextHighlights(part, k, highlights)
     nodes.push(...hlNodes)
   })
@@ -134,7 +155,13 @@ function renderInline(
   return <>{nodes}</>
 }
 
-// ── Block parser ─────────────────────────────────────────────────────────────
+function riskCellStyle(cell: string): React.CSSProperties {
+  const lower = cell.toLowerCase()
+  if (/high/i.test(lower) && /risk/i.test(lower)) return { color: 'rgb(252,165,165)', fontWeight: 600 }
+  if (/medium|moderate/i.test(lower) && /risk/i.test(lower)) return { color: 'rgb(216,180,254)', fontWeight: 600 }
+  if (/low/i.test(lower) && /risk/i.test(lower)) return { color: 'rgb(110,231,183)', fontWeight: 600 }
+  return {}
+}
 
 function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNode[] {
   const lines = content.split('\n')
@@ -148,7 +175,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
 
     if (!trimmed) { i++; continue }
 
-    // Fenced code block
     if (trimmed.startsWith('```')) {
       i++
       const codeLines: string[] = []
@@ -169,7 +195,7 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
     if (h3) {
       const k = String(key++)
       nodes.push(
-        <h3 key={k} data-section={h3[1].toLowerCase()} className="text-[13px] font-semibold text-foreground/95 mt-6 mb-2 tracking-tight">
+        <h3 key={k} data-section={h3[1].toLowerCase()} className="text-[13px] font-semibold text-foreground/95 mt-6 mb-2 tracking-tight pl-3 border-l-2 border-accent/40">
           {renderInline(h3[1], `h3-${k}`, highlights)}
         </h3>
       )
@@ -179,8 +205,16 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
     const h2 = trimmed.match(/^## (.+)$/)
     if (h2) {
       const k = String(key++)
+      const lower = h2[1].toLowerCase()
+      const borderColor = lower.includes('risk') || lower.includes('danger') || lower.includes('critical')
+        ? 'border-red-400/60'
+        : lower.includes('missing') || lower.includes('weak') || lower.includes('concern')
+          ? 'border-iris/60'
+          : lower.includes('recommend') || lower.includes('negotiat') || lower.includes('insight')
+            ? 'border-teal/60'
+            : 'border-accent/50'
       nodes.push(
-        <h2 key={k} data-section={h2[1].toLowerCase()} className="text-[15px] font-semibold text-foreground mt-7 mb-2.5 pb-2 border-b border-separator tracking-tight">
+        <h2 key={k} data-section={h2[1].toLowerCase()} className={`text-[15px] font-semibold text-foreground mt-7 mb-2.5 pb-2 border-b tracking-tight ${borderColor}`}>
           {renderInline(h2[1], `h2-${k}`, highlights)}
         </h2>
       )
@@ -211,7 +245,7 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       }
       const k = String(key++)
       nodes.push(
-        <blockquote key={k} className="border-l-2 border-accent/50 bg-white/[0.025] rounded-r-lg pl-4 pr-3 py-2.5 my-3 italic text-foreground/70">
+        <blockquote key={k} className="border-l-2 border-accent/50 bg-accent/[0.04] rounded-r-lg pl-4 pr-3 py-2.5 my-3 italic text-foreground/70">
           {quoteLines.map((ql, j) => (
             <p key={j} className="text-[13px] leading-7">{renderInline(ql, `bq-${k}-${j}`, highlights)}</p>
           ))}
@@ -220,7 +254,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       continue
     }
 
-    // Table
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
       const tableLines: string[] = []
       while (i < lines.length && lines[i].trim().startsWith('|')) {
@@ -238,10 +271,10 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
         nodes.push(
           <div key={k} className="overflow-x-auto my-4 rounded-xl border border-separator">
             <table className="w-full text-sm border-collapse">
-              <thead className="bg-white/[0.04]">
+              <thead className="bg-white/[0.05]">
                 <tr>
                   {headers.map((h, ci) => (
-                    <th key={ci} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted border-b border-separator">
+                    <th key={ci} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-accent/80 border-b border-separator">
                       {renderInline(h, `th-${k}-${ci}`, highlights)}
                     </th>
                   ))}
@@ -249,9 +282,9 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
               </thead>
               <tbody>
                 {rows.map((row, ri) => (
-                  <tr key={ri} className="border-t border-separator/40 hover:bg-white/[0.02] transition-colors">
+                  <tr key={ri} className={cn('border-t border-separator/40 transition-colors', ri % 2 === 0 ? 'bg-white/[0.01]' : 'bg-white/[0.025]', 'hover:bg-white/[0.04]')}>
                     {row.map((cell, ci) => (
-                      <td key={ci} className="px-4 py-2.5 text-[13px] text-foreground/80">
+                      <td key={ci} className="px-4 py-2.5 text-[13px] text-foreground/80" style={riskCellStyle(cell)}>
                         {renderInline(cell, `td-${k}-${ri}-${ci}`, highlights)}
                       </td>
                     ))}
@@ -265,7 +298,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       continue
     }
 
-    // Unordered list
     if (/^[-*•]\s+/.test(trimmed)) {
       const items: string[] = []
       while (i < lines.length && (/^[-*•]\s+/.test(lines[i].trim()) || /^\s{2,}[-*•]\s+/.test(lines[i]))) {
@@ -287,7 +319,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       continue
     }
 
-    // Ordered list
     if (/^\d+\.\s+/.test(trimmed)) {
       const items: string[] = []
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
@@ -311,7 +342,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       continue
     }
 
-    // Paragraph
     const paraLines: string[] = []
     while (
       i < lines.length &&
@@ -328,11 +358,11 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
       i++
     }
     if (paraLines.length > 0) {
-      const text = paraLines.join(' ')
+      const t = paraLines.join(' ')
       const k = String(key++)
       nodes.push(
         <p key={k} className="text-[13px] text-foreground/85 leading-7 mb-3">
-          {renderInline(text, `p-${k}`, highlights)}
+          {renderInline(t, `p-${k}`, highlights)}
         </p>
       )
     }
@@ -340,8 +370,6 @@ function parseMarkdown(content: string, highlights: Highlight[]): React.ReactNod
 
   return nodes
 }
-
-// ── Component ─────────────────────────────────────────────────────────────────
 
 interface DocumentViewerProps {
   content: string
@@ -357,14 +385,11 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     const [selectedColor, setSelectedColor] = useState(HIGHLIGHT_COLORS[0])
     const contentRef = useRef<HTMLDivElement>(null)
 
-    // Expose scrollToText for quick insights and feature chips
     useImperativeHandle(ref, () => ({
       scrollToText: (searchText: string) => {
         if (!contentRef.current) return
-
         const lower = searchText.toLowerCase().slice(0, 40)
 
-        // Walk headings first (exact section search)
         const headings = contentRef.current.querySelectorAll('[data-section]')
         for (const el of headings) {
           const sec = el.getAttribute('data-section') || ''
@@ -374,7 +399,6 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           }
         }
 
-        // Walk all text-containing elements
         const allEls = contentRef.current.querySelectorAll('p, li, h1, h2, h3, td, blockquote')
         for (const el of allEls) {
           if ((el.textContent || '').toLowerCase().includes(lower)) {
@@ -399,13 +423,16 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       if (!highlightMode) return
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed) return
-      const text = sel.toString().trim()
-      if (!text || text.length < 2) return
-      if (!contentRef.current?.contains(sel.anchorNode)) return
+      const inContent = contentRef.current?.contains(sel.anchorNode) || contentRef.current?.contains(sel.focusNode)
+      if (!inContent) return
+
+      // Normalize: collapse all whitespace so cross-element selections match correctly
+      const normalized = sel.toString().replace(/\s+/g, ' ').trim()
+      if (!normalized || normalized.length < 2) return
 
       onAddHighlight({
         id: Math.random().toString(36).slice(2),
-        text,
+        text: normalized,
         color: selectedColor.bg,
       })
       sel.removeAllRanges()
@@ -414,8 +441,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     const nodes = parseMarkdown(content, highlights)
 
     return (
-      <div className={cn('flex flex-col gap-3', className)}>
-        {/* Highlight toolbar */}
+      <div className={cn('flex flex-col gap-3', className)} onMouseUp={handleMouseUp}>
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setHighlightMode(v => !v)}
@@ -464,11 +490,9 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           )}
         </div>
 
-        {/* Content */}
         <div
           ref={contentRef}
-          onMouseUp={handleMouseUp}
-          className={cn('min-w-0', highlightMode && 'cursor-text')}
+          className={cn('min-w-0', highlightMode && 'cursor-text select-text')}
         >
           {nodes}
         </div>
@@ -478,3 +502,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 )
 
 DocumentViewer.displayName = 'DocumentViewer'
+
+// Lightweight markdown renderer — same styles as DocumentViewer but no toolbar.
+// Use inside chat bubbles or anywhere you just need rendered markdown.
+export function MarkdownContent({ content, className }: { content: string; className?: string }) {
+  const nodes = parseMarkdown(content, [])
+  return <div className={cn('min-w-0', className)}>{nodes}</div>
+}

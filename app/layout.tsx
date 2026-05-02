@@ -4,6 +4,8 @@ import { AppBackground } from '@/components/layout/app-background'
 import { Navbar } from '@/components/layout/navbar'
 import { Footer } from '@/components/layout/footer'
 import { Toaster } from 'sonner'
+import { Heartbeat } from '@/components/Heartbeat'
+import { NonIndianLawDialog } from '@/components/non-indian-law-dialog'
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
@@ -42,6 +44,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="bg-background text-foreground font-sans antialiased">
+        <Heartbeat />
+        <NonIndianLawDialog />
         <AppBackground />
         <Navbar />
         <main>{children}</main>

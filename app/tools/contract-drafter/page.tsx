@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
+import { handleApiError } from '@/lib/handle-error'
 
 const CONTRACT_TYPES = [
   { value: 'Service Agreement', label: 'Service Agreement' },
@@ -37,7 +38,7 @@ export default function ContractDrafterPage() {
       const data = await api.draftContract(description, type)
       setResult(data.result)
     } catch (e: any) {
-      toast.error(e.message || 'Drafting failed')
+      handleApiError(e)
     } finally {
       setLoading(false)
     }
@@ -79,7 +80,7 @@ export default function ContractDrafterPage() {
                   setDescription(e.target.value)
                   setResult(null)
                 }}
-                placeholder="e.g. I'm hiring a freelance designer to create a brand identity for my startup. They'll deliver logos, color palette, and typography guidelines within 4 weeks for $2,500. I want to own all the work."
+                placeholder="e.g. I'm hiring a freelance UI/UX designer based in Bengaluru to create a brand identity for my startup. They'll deliver logos, colour palette and brand guidelines within 6 weeks for ₹1,20,000. I want to own all the IP."
                 className="min-h-[200px] resize-none"
               />
               <p className="text-xs text-muted">

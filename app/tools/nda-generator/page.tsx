@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
+import { handleApiError } from '@/lib/handle-error'
 
 export default function NDAGeneratorPage() {
   const [form, setForm] = useState({
@@ -47,7 +48,7 @@ export default function NDAGeneratorPage() {
       })
       setResult(data.result)
     } catch (e: any) {
-      toast.error(e.message || 'Generation failed')
+      handleApiError(e)
     } finally {
       setLoading(false)
     }
@@ -69,7 +70,7 @@ export default function NDAGeneratorPage() {
                   <SelectValue placeholder="Select NDA type…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mutual">Mutual (both parties share info)</SelectItem>
+                  <SelectItem value="mutual">Mutual (both parties share information)</SelectItem>
                   <SelectItem value="one-way">One-Way (one party discloses)</SelectItem>
                 </SelectContent>
               </Select>
@@ -79,7 +80,7 @@ export default function NDAGeneratorPage() {
               <Input
                 value={form.party_a}
                 onChange={(e) => set('party_a', e.target.value)}
-                placeholder="e.g. Acme Corp, John Smith"
+                placeholder="e.g. Tata Consultancy Services Limited, Mumbai"
               />
             </div>
             <div className="space-y-2">
@@ -87,7 +88,7 @@ export default function NDAGeneratorPage() {
               <Input
                 value={form.party_b}
                 onChange={(e) => set('party_b', e.target.value)}
-                placeholder="e.g. Jane Doe, XYZ Consulting"
+                placeholder="e.g. Infosys Limited, Bengaluru"
               />
             </div>
             <div className="space-y-2">
@@ -95,7 +96,7 @@ export default function NDAGeneratorPage() {
               <Input
                 value={form.jurisdiction}
                 onChange={(e) => set('jurisdiction', e.target.value)}
-                placeholder="e.g. State of California, England & Wales"
+                placeholder="e.g. Mumbai, Maharashtra · Bengaluru, Karnataka · New Delhi"
               />
             </div>
             <div className="space-y-2">
@@ -103,7 +104,7 @@ export default function NDAGeneratorPage() {
               <Input
                 value={form.duration}
                 onChange={(e) => set('duration', e.target.value)}
-                placeholder="e.g. 2 years, 5 years, indefinite"
+                placeholder="e.g. 3 years from signing · 5 years · indefinite"
               />
             </div>
             <div className="space-y-2">
@@ -111,7 +112,7 @@ export default function NDAGeneratorPage() {
               <Textarea
                 value={form.purpose}
                 onChange={(e) => set('purpose', e.target.value)}
-                placeholder="e.g. Exploring a potential business partnership to develop a mobile app"
+                placeholder="e.g. Evaluating a potential joint venture to develop a FinTech platform for the Indian market"
                 className="min-h-[80px]"
               />
             </div>

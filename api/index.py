@@ -1,7 +1,3 @@
-"""
-LegalDoc API v3 — Indian-law RAG-backed FastAPI backend.
-Deployed as a Vercel Python serverless function via Mangum.
-"""
 import os
 
 # Load .env in local development (no-op if file absent or python-dotenv not installed)
@@ -11,13 +7,15 @@ try:
 except ImportError:
     pass
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from mangum import Mangum
 from pydantic import BaseModel
 from typing import Optional
 
 from services.llm_client import call_llm
+from services.key_manager import RateLimitExceeded
 from services.rag import build_rag_context
 from services.pdf_parser import extract_text_from_docx, extract_text_from_pdf
 from services.text_validation import require_text
@@ -39,7 +37,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Models ───────────────────────────────────────────────────────────────────
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    wait_secs = round(exc.wait_seconds)
+    mins = max(1, round(exc.wait_seconds / 60))
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": str(exc),
+            "retry_after_seconds": wait_secs,
+            "retry_after_minutes": mins,
+        },
+    )
 
 class TextRequest(BaseModel):
     text: str
@@ -68,7 +79,12 @@ class ResultResponse(BaseModel):
     result: str
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+NOT_INDIAN_LAW = "NOT_INDIAN_LAW"
+
+def _raise_if_non_indian_law(result: str) -> None:
+    if result.strip().upper().startswith(NOT_INDIAN_LAW):
+        raise HTTPException(status_code=422, detail="non_indian_law_content")
+
 
 async def _get_corpus_context(query: str, top_k: int = 5) -> tuple[str, list[Citation]]:
     """Attempt corpus retrieval. Returns (context_str, citations). Falls back gracefully."""
@@ -101,7 +117,6 @@ async def _get_corpus_context(query: str, top_k: int = 5) -> tuple[str, list[Cit
         return "", []
 
 
-# ── Research endpoint (new RAG-backed) ───────────────────────────────────────
 
 @app.post("/api/research/query", response_model=CorpusQueryResponse)
 async def research_query(req: CorpusQueryRequest):
@@ -116,22 +131,20 @@ async def research_query(req: CorpusQueryRequest):
     if req.document_text and len(req.document_text.strip()) > 50:
         doc_context = build_rag_context(req.document_text, question, top_k=5)
 
-    # Build prompt with strict source separation
     prompt_parts = [
-        "You are LegalDoc AI — an Indian-law research assistant. Answer the question using the provided sources.",
-        "Follow these rules strictly:",
-        "1. If a user document is provided, first state what the document says.",
-        "2. Then explain the relevant Indian-law legal context from the retrieved authorities.",
-        "3. Identify any mismatch, risk, ambiguity, or legal implications.",
-        "4. Do NOT silently override or correct the document language — compare and explain.",
-        "5. If support is weak, clearly say so.",
+        "You are LegalDoc AI — an Indian-law research assistant.",
+        "Answer the question directly and concisely. Only include what the question actually requires.",
+        "If the answer is a single sentence, write a single sentence. Don't pad with generic legal warnings.",
+        "If the document and the law conflict, note the conflict specifically.",
+        "If support is weak or unavailable, say so briefly. Never fabricate.",
+        "IMPORTANT: If the question has nothing to do with any legal matter (e.g. it is a greeting, a recipe question, completely off-topic), respond with exactly: NOT_INDIAN_LAW",
         "",
     ]
 
     if corpus_context:
         prompt_parts.append("Indian-law authorities:\n" + corpus_context)
     else:
-        prompt_parts.append("No Indian-law corpus results available. Answer from general legal knowledge, clearly labeled as such.")
+        prompt_parts.append("No corpus available. Answer from general Indian legal knowledge — label this clearly.")
 
     if doc_context:
         prompt_parts.append("\nUser document excerpts:\n" + doc_context)
@@ -140,6 +153,7 @@ async def research_query(req: CorpusQueryRequest):
 
     prompt = "\n".join(prompt_parts)
     answer = await call_llm(prompt)
+    _raise_if_non_indian_law(answer)
 
     # Compute confidence
     try:
@@ -148,7 +162,7 @@ async def research_query(req: CorpusQueryRequest):
         results = await hybrid_search(question, top_k=5)
         confidence = score_confidence(results)
     except Exception:
-        confidence = ConfidenceLevel.LOW if not corpus_context else ConfidenceLevel.MEDIUM
+        confidence = ConfidenceLevel.MEDIUM if (doc_context or corpus_context) else ConfidenceLevel.LOW
 
     doc_findings = None
     legal_context_str = None
@@ -166,7 +180,6 @@ async def research_query(req: CorpusQueryRequest):
     )
 
 
-# ── Analyze routes ────────────────────────────────────────────────────────────
 
 @app.post("/api/analyze/document", response_model=ResultResponse)
 async def analyze_document(req: TextRequest):
@@ -189,44 +202,42 @@ Indian-law reference material:
 """
 
     prompt = f"""You are a senior legal document reviewer preparing a practical first-pass review for a lawyer.
-Focus on Indian law. If something is not present, say "Not found in document".
-Be specific, concise, and useful for legal review. Do not give generic disclaimers.
+Focus on Indian law. Be specific and concise — remove filler, don't repeat the document back.
 
-Use proper markdown formatting:
-- Use ## for main section headings and ### for sub-headings
-- Use **bold** for important terms, party names, and risk labels
-- Use bullet points (- ) for lists
-- Use | tables | for structured data like key terms
-- Label risks clearly as **High Risk**, **Medium Risk**, or **Low Risk**
+IMPORTANT: If the uploaded text is not a legal document (e.g. it's a recipe, article, personal note, or random text), respond with exactly: NOT_INDIAN_LAW
 
-Return these sections:
+Use markdown: ## headings, **bold** for terms and risk labels, - bullets, | tables |.
+Label risks as **High Risk**, **Medium Risk**, or **Low Risk**.
+
+Include only the sections that have actual content — skip any section where you have nothing meaningful to say:
 
 ## 1. Executive Brief
-Document type, purpose, and business context.
+Document type, purpose, key facts.
 
 ## 2. Parties and Roles
-Named parties, capacity, and responsibilities.
+Named parties and their roles (skip if a one-party document).
 
 ## 3. Key Terms Table
 | Obligation | Responsible Party | Deadline / Condition | Source Clause |
 |---|---|---|---|
 
 ## 4. Risk Register
-High/medium/low risks with quoted trigger language and why it matters.
+Risks with quoted trigger language. Skip if no significant risks.
 
 ## 5. Missing or Weak Protections
-Important clauses absent or underdeveloped.
+Absent or underdeveloped clauses that matter. Skip if protections are solid.
 
 ## 6. Negotiation Points
-Concrete changes a lawyer may request.
+Concrete changes to request. Skip if document is balanced.
 
 ## 7. Follow-up Questions
-Facts needed from the client before final review.
+Questions for the client before final review. Skip if none.
 {corpus_section}
 
 Document:
 {text[:10000]}"""
     result = await call_llm(prompt)
+    _raise_if_non_indian_law(result)
     return ResultResponse(result=result)
 
 
@@ -250,46 +261,41 @@ Also consider compliance with Indian-law standards based on these references:
 
     prompt = f"""You are an expert contract risk analyst focusing on Indian law.
 
-First line of your response MUST be exactly: RISK_SCORE: [number between 0-100]
+IMPORTANT: If the text is not a legal contract or legal document, respond with exactly: NOT_INDIAN_LAW
+
+First line MUST be exactly: RISK_SCORE: [number 0-100]
 (0 = very safe, 100 = extremely risky)
 
-Use proper markdown formatting:
-- Use ## for section headings, ### for sub-headings
-- Use **bold** for clause names, key terms, and risk labels
-- Label findings as **High Risk**, **Medium Risk**, or **Low Risk**
-- Use bullet points (- ) and quoted text (> ) for contract excerpts
-
-Structure your response exactly as:
+Use markdown: ## headings, **bold** for clause names and risk labels, - bullets, > for quotes.
+Label findings as **High Risk**, **Medium Risk**, or **Low Risk**.
 
 ## Risk Score Breakdown
-Explain what drove the score. Show a contribution table like:
+What drove the score — contribution table:
 | Risk Factor | Contribution |
 |---|---|
-| [e.g. High-risk clauses] | [e.g. 35%] |
-| [Missing protections] | [e.g. 25%] |
-| [Medium-risk areas] | [e.g. 20%] |
-| [Compliance gaps] | [e.g. 20%] |
-*(all rows must sum to 100%)*
+*(rows must sum to 100%)*
 
 ## Overall Risk Assessment
-One-paragraph summary of the contract's risk profile under Indian law.
+One concise paragraph on the contract's risk profile under Indian law.
 
 ## High-Risk Clauses
-For each: **Clause Name** — **High Risk** — quote the trigger language, explain why it is dangerous, and what it costs the weaker party.
+Only include if present. For each: **Clause Name** — **High Risk** — quote trigger language, explain why it matters.
 
 ## Medium-Risk Areas
-Concerns worth negotiating but not immediately dangerous.
+Only include if present.
 
 ## Missing Standard Protections
-Standard Indian-law protections absent from this contract (cite the applicable Act where possible).
+Only clauses that are actually absent and genuinely matter for this contract type.
 
 ## Recommendations
-Prioritized, actionable steps to reduce the risk score. Number them.
+Numbered, prioritized actions. Skip sections above if there's nothing meaningful to say.
 {corpus_section}
 
 Contract:
 {text[:10000]}"""
     result = await call_llm(prompt)
+
+    _raise_if_non_indian_law(result)
 
     score = 50
     for line in result.split('\n')[:3]:
@@ -325,41 +331,38 @@ Where relevant, note how each clause compares to Indian legal standards:
 {corpus_context}
 """
 
-    prompt = f"""You are an expert Indian-law legal analyst. Extract and categorize all significant clauses.
+    prompt = f"""You are an expert Indian-law legal analyst. Extract and categorize significant clauses from the document.
 
-Use proper markdown formatting:
-- Use ## for each clause type heading
-- Use **bold** for clause names, party names, and risk labels
-- Label each clause as **High Risk**, **Medium Risk**, or **Low Risk**
-- Use > blockquotes for direct quotes from the document
-- Use bullet points (- ) for key concerns
+IMPORTANT: If the text is not a legal document, respond with exactly: NOT_INDIAN_LAW
 
-For each clause found, structure it as:
+Only include clause types that actually appear in the document — do not invent sections for missing clauses.
+Be specific and concise. Quote directly from the document, don't paraphrase what isn't there.
 
-## [Clause Type] — **[Risk Level]**
+Use markdown. For each found clause:
 
-**Quote:** > [direct quote from document]
+## [Clause Type] — **[High/Medium/Low Risk]**
 
-**Plain English:** What this clause actually means.
+> [direct quote from document]
 
-**Key Concerns:**
-- [concern 1]
-- [concern 2]
+**Plain English:** What this actually means.
 
-**Indian-Law Note:** [if relevant context exists]
+**Key Concerns:** (only if there are genuine concerns)
+- [specific concern]
+
+**Indian-Law Note:** [only if a specific Indian law applies]
 
 ---
 
-Clause types to look for: Termination / Indemnity / Payment / Confidentiality / IP / Non-Compete / Jurisdiction / Force Majeure / Governing Law / Dispute Resolution / Liability Cap / Warranty / Representations / Assignment / Amendment / Entire Agreement
+Clause types to look for (only include if present): Termination / Indemnity / Payment / Confidentiality / IP / Non-Compete / Jurisdiction / Force Majeure / Governing Law / Dispute Resolution / Liability Cap / Warranty / Representations / Assignment / Amendment / Entire Agreement
 {corpus_section}
 
 Document:
 {text[:10000]}"""
     result = await call_llm(prompt)
+    _raise_if_non_indian_law(result)
     return ResultResponse(result=result)
 
 
-# ── Draft routes ─────────────────────────────────────────────────────────────
 
 @app.post("/api/draft/contract", response_model=ResultResponse)
 async def draft_contract(req: DraftRequest):
@@ -384,6 +387,8 @@ Incorporate relevant Indian-law requirements and standard practices from these r
 
     prompt = f"""You are an expert Indian contract lawyer. Draft a complete, legally sound {contract_type} agreement governed by Indian law.
 
+IMPORTANT: If the description is not a legal agreement or is completely unrelated to any legal matter, respond with exactly: NOT_INDIAN_LAW
+
 Deal description: {description}
 
 Generate a complete contract with:
@@ -403,6 +408,7 @@ Note: This is a research-informed draft. It should be reviewed by a qualified In
 
 Make it professional, balanced, and immediately usable."""
     result = await call_llm(prompt, max_tokens=3000)
+    _raise_if_non_indian_law(result)
     return ResultResponse(result=result)
 
 
@@ -476,7 +482,6 @@ Make it immediately usable and professionally formatted."""
     return ResultResponse(result=result)
 
 
-# ── Understand routes ─────────────────────────────────────────────────────────
 
 @app.post("/api/understand/plain-english", response_model=ResultResponse)
 async def plain_english(req: TextRequest):
@@ -485,31 +490,21 @@ async def plain_english(req: TextRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    prompt = f"""You are a legal translator who makes Indian legal language accessible to non-lawyers.
+    prompt = f"""You are a legal translator making Indian legal language accessible to non-lawyers.
 
-Use proper markdown formatting:
-- Use ## for section headings
-- Use **bold** for key terms and important phrases
-- Use bullet points (- ) for lists
-- Label any risks clearly as **High Risk**, **Medium Risk**, or **Low Risk**
+IMPORTANT: If the text is not a legal document or legal provision, respond with exactly: NOT_INDIAN_LAW
 
-Translate the following legal text into plain English:
-
-## Plain English Summary
-What this actually means in everyday language.
-
-## Key Points
-- [3-6 bullet points of what matters most]
-
-## What This Means for You
-Practical implications under Indian law.
-
-## Watch Out For
-Any concerning language, hidden risks, or missing protections.
+Translate the text into plain English. Be as brief as the content warrants.
+- For a single clause: one or two paragraphs is enough.
+- For a full document: use sections, but only those that add value.
+- Use **bold** for key terms and risk labels.
+- Label risks as **High Risk**, **Medium Risk**, or **Low Risk** only where they exist.
+- Don't pad with generic disclaimers.
 
 Legal text:
 {text[:5000]}"""
     result = await call_llm(prompt)
+    _raise_if_non_indian_law(result)
     return ResultResponse(result=result)
 
 
@@ -537,30 +532,27 @@ async def legal_qa(req: QARequest):
         doc_context = build_rag_context(req.document_text, question, top_k=5)
 
     prompt_parts = [
-        "You are a precise Indian-law legal assistant.",
-        "Answer the question using the provided sources. If the answer is not in the sources, clearly state that.",
-        "Never fabricate information.",
+        "You are a precise Indian-law legal assistant in a conversation.",
+        "Answer only what was asked. Match the length of the answer to the complexity of the question.",
+        "A factual question gets a direct answer. A nuanced question gets explanation. Never pad with generic text.",
+        "If the answer isn't in the sources, say so briefly. Never fabricate.",
+        "IMPORTANT: If the question has nothing to do with legal matters (e.g. it's off-topic, a greeting, unrelated to law), respond with exactly: NOT_INDIAN_LAW",
     ]
 
     if doc_context:
-        prompt_parts.append(f"\nUser document excerpts:\n{doc_context}")
+        prompt_parts.append(f"\nDocument excerpts:\n{doc_context}")
 
     if corpus_context:
-        prompt_parts.append(f"\nIndian-law authorities:\n{corpus_context}")
+        prompt_parts.append(f"\nIndian-law references:\n{corpus_context}")
 
     prompt_parts.append(f"\nQuestion: {question}")
-    prompt_parts.append("""
-Provide:
-1. Direct Answer (concise)
-2. Supporting Evidence (quote the relevant parts)
-3. Indian-Law Context (if relevant authorities were retrieved)""")
 
     prompt = "\n".join(prompt_parts)
     result = await call_llm(prompt)
+    _raise_if_non_indian_law(result)
     return ResultResponse(result=result)
 
 
-# ── Utility routes ────────────────────────────────────────────────────────────
 
 @app.post("/api/extract-file")
 async def extract_file(file: UploadFile = File(...)):
@@ -588,6 +580,19 @@ async def extract_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail="No useful text could be extracted from this file.")
 
     return {"text": text, "length": len(text)}
+
+
+@app.get("/api/keys/status")
+async def keys_status():
+    from services.key_manager import get_manager
+    manager = get_manager()
+    return {
+        "total_keys": len(manager.slots),
+        "available_keys": sum(1 for s in manager.slots if s.available),
+        "all_locked": manager.all_locked(),
+        "min_wait_seconds": round(manager.min_wait_seconds()),
+        "keys": manager.status(),
+    }
 
 
 @app.get("/api/health")
